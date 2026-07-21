@@ -1,0 +1,192 @@
+diff --git a/agent/engine.py b/agent/engine.py
+index 06c526c..e14fc96 100644
+--- a/agent/engine.py
++++ b/agent/engine.py
+@@ -971,6 +971,26 @@ class RLMEngine:
+             limit = int(args.get("limit", 100) or 100)
+             return False, self._read_artifact(aid, offset, limit)
+ 
++        if name == "eiye_db_list_datasources":
++            return False, self.tools.eiye_db_list_datasources()
++
++        if name == "eiye_db_get_schema":
++            datasource_id = str(args.get("datasource_id", "")).strip()
++            if not datasource_id:
++                return False, "eiye_db_get_schema requires datasource_id"
++            return False, self.tools.eiye_db_get_schema(datasource_id)
++
++        if name == "eiye_db_query":
++            datasource_id = str(args.get("datasource_id", "")).strip()
++            if not datasource_id:
++                return False, "eiye_db_query requires datasource_id"
++            request = args.get("request")
++            if not isinstance(request, str) or not request.strip():
++                return False, "eiye_db_query requires request (a JSON object string)"
++            raw_limit = args.get("limit")
++            limit = int(raw_limit) if isinstance(raw_limit, int) else None
++            return False, self.tools.eiye_db_query(datasource_id, request, limit)
++
+         return False, f"Unknown action type: {name}"
+ 
+     # ------------------------------------------------------------------
+diff --git a/agent/tool_defs.py b/agent/tool_defs.py
+index 323edbd..ef414ee 100644
+--- a/agent/tool_defs.py
++++ b/agent/tool_defs.py
+@@ -379,6 +379,67 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
+             "additionalProperties": False,
+         },
+     },
++    {
++        "name": "eiye_db_list_datasources",
++        "description": (
++            "List datasources registered in eiye_db, the governed data-access gateway. "
++            "Returns id, name, type, status, and table count for each. Use this to "
++            "discover what data is available before querying."
++        ),
++        "parameters": {
++            "type": "object",
++            "properties": {},
++            "required": [],
++            "additionalProperties": False,
++        },
++    },
++    {
++        "name": "eiye_db_get_schema",
++        "description": (
++            "Discover and return the schema (tables and columns) of an eiye_db datasource. "
++            "Call this before eiye_db_query to learn what can be queried."
++        ),
++        "parameters": {
++            "type": "object",
++            "properties": {
++                "datasource_id": {
++                    "type": "string",
++                    "description": "ID of the datasource (from eiye_db_list_datasources).",
++                },
++            },
++            "required": ["datasource_id"],
++            "additionalProperties": False,
++        },
++    },
++    {
++        "name": "eiye_db_query",
++        "description": (
++            "Run a governed, read-only query against an eiye_db datasource. PII is always "
++            "redacted and every query is audited. The 'request' is a connector-specific "
++            "query passed as a JSON object string: filesystem/CSV uses '{\"path\": "
++            "\"people.csv\"}', postgres uses '{\"sql\": \"SELECT ...\"}', REST uses "
++            "'{\"path\": \"/endpoint\"}'."
++        ),
++        "parameters": {
++            "type": "object",
++            "properties": {
++                "datasource_id": {
++                    "type": "string",
++                    "description": "ID of the datasource to query (from eiye_db_list_datasources).",
++                },
++                "request": {
++                    "type": "string",
++                    "description": "Connector-specific query as a JSON object string, e.g. '{\"path\": \"people.csv\"}'.",
++                },
++                "limit": {
++                    "type": "integer",
++                    "description": "Optional maximum number of rows to return.",
++                },
++            },
++            "required": ["datasource_id", "request"],
++            "additionalProperties": False,
++        },
++    },
+     {
+         "name": "list_artifacts",
+         "description": "List artifacts from previous subagent runs. Returns ID, objective, and result summary for each.",
+diff --git a/agent/tools.py b/agent/tools.py
+index 86a9e5c..df8902c 100644
+--- a/agent/tools.py
++++ b/agent/tools.py
+@@ -885,3 +885,72 @@ class WorkspaceTools:
+             "total": len(pages),
+         }
+         return self._clip(json.dumps(output, indent=2, ensure_ascii=True), self.max_file_chars)
++
++    # ------------------------------------------------------------------
++    # eiye_db bridge — governed data access via the eiye_db REST gateway.
++    # Base URL from EIYE_DB_URL (default http://localhost:8000/api/v1);
++    # optional X-API-Key from EIYE_DB_API_KEY. Never sends include_pii, so
++    # eiye_db always redacts PII and audits every call.
++    # ------------------------------------------------------------------
++    def _eiye_request(self, method: str, path: str, payload: dict[str, Any] | None = None) -> Any:
++        base = (os.environ.get("EIYE_DB_URL") or "http://localhost:8000/api/v1").rstrip("/")
++        url = base + path
++        headers = {"Accept": "application/json"}
++        data = None
++        if payload is not None:
++            data = json.dumps(payload).encode("utf-8")
++            headers["Content-Type"] = "application/json"
++        key = os.environ.get("EIYE_DB_API_KEY")
++        if key:
++            headers["X-API-Key"] = key
++        req = urllib.request.Request(url=url, data=data, headers=headers, method=method)
++        try:
++            with urllib.request.urlopen(req, timeout=self.command_timeout_sec) as resp:
++                raw = resp.read().decode("utf-8", errors="replace")
++        except urllib.error.HTTPError as exc:
++            body = exc.read().decode("utf-8", errors="replace")
++            raise ToolError(f"eiye_db HTTP {exc.code}: {body}") from exc
++        except urllib.error.URLError as exc:
++            raise ToolError(f"eiye_db connection error ({url}): {exc}") from exc
++        except OSError as exc:
++            raise ToolError(f"eiye_db network error: {exc}") from exc
++        try:
++            return json.loads(raw)
++        except json.JSONDecodeError as exc:
++            raise ToolError(f"eiye_db returned non-JSON payload: {raw[:500]}") from exc
++
++    def eiye_db_list_datasources(self) -> str:
++        try:
++            parsed = self._eiye_request("GET", "/surface/sources")
++        except Exception as exc:
++            return f"eiye_db_list_datasources failed: {exc}"
++        return self._clip(json.dumps(parsed, indent=2, ensure_ascii=True), self.max_file_chars)
++
++    def eiye_db_get_schema(self, datasource_id: str) -> str:
++        datasource_id = datasource_id.strip()
++        if not datasource_id:
++            return "eiye_db_get_schema requires datasource_id"
++        try:
++            parsed = self._eiye_request("POST", f"/datasources/{datasource_id}/discover")
++        except Exception as exc:
++            return f"eiye_db_get_schema failed: {exc}"
++        return self._clip(json.dumps(parsed, indent=2, ensure_ascii=True), self.max_file_chars)
++
++    def eiye_db_query(self, datasource_id: str, request: str, limit: int | None = None) -> str:
++        datasource_id = datasource_id.strip()
++        if not datasource_id:
++            return "eiye_db_query requires datasource_id"
++        try:
++            request_obj = json.loads(request) if isinstance(request, str) else request
++        except json.JSONDecodeError as exc:
++            return f"eiye_db_query: request must be a JSON object string: {exc}"
++        if not isinstance(request_obj, dict):
++            return "eiye_db_query: request must be a JSON object"
++        payload: dict[str, Any] = {"datasource_id": datasource_id, "request": request_obj}
++        if limit is not None:
++            payload["limit"] = limit
++        try:
++            parsed = self._eiye_request("POST", "/query", payload)
++        except Exception as exc:
++            return f"eiye_db_query failed: {exc}"
++        return self._clip(json.dumps(parsed, indent=2, ensure_ascii=True), self.max_file_chars)
+diff --git a/tests/test_tool_defs.py b/tests/test_tool_defs.py
+index 5efccd5..e7d9729 100644
+--- a/tests/test_tool_defs.py
++++ b/tests/test_tool_defs.py
+@@ -35,6 +35,7 @@ class ToolDefinitionsTests(unittest.TestCase):
+             "run_shell", "run_shell_bg", "check_shell_bg", "kill_shell_bg",
+             "think", "subtask", "execute",
+             "list_artifacts", "read_artifact",
++            "eiye_db_list_datasources", "eiye_db_get_schema", "eiye_db_query",
+         }
+         self.assertEqual(set(names), expected)
+ 
