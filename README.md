@@ -135,6 +135,31 @@ absolute path for both processes, e.g. add
 `"env": {"EIYE_DATABASE_URL": "sqlite:////absolute/path/to/eiye.db"}` to the
 MCP server config and export the same for uvicorn.
 
+### 4. Manage datasources in a browser (web UI)
+
+A React dashboard lets you add, edit, and delete datasources, test connections,
+discover schemas, and run governed (PII-redacted) queries — no curl required.
+
+```bash
+# 1. Start the backend (from backend/, as in step 1) — it now allows the dev UI via CORS
+uvicorn eiye_db.main:app --reload
+
+# 2. In a second terminal, start the frontend
+cd frontend
+npm install
+npm run dev
+```
+
+Open **http://localhost:5173**. The dev server proxies `/api` to the backend on
+`localhost:8000`, so no extra configuration is needed. Use **+ New** to register a
+datasource (filesystem / PostgreSQL / REST API), then **Test connection**,
+**Discover schema**, and **Run query** to see redacted results.
+
+- Backend on a different host/port? Set `VITE_PROXY_TARGET` (proxy) or
+  `VITE_API_BASE` (direct, e.g. `http://host:8000/api/v1`) before `npm run dev`,
+  and add that browser origin to `EIYE_CORS_ORIGINS` (comma-separated) for the backend.
+- If the backend has an API key set, paste it into the field in the UI header.
+
 ## Datasource Connectors
 
 | Connector | Type | Status |

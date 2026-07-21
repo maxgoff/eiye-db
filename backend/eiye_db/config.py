@@ -19,6 +19,9 @@ class Settings(BaseSettings):
     api_key: str | None = None
     admin_api_key: str | None = None
 
+    # Browser access (CORS). Comma-separated origins; defaults cover the Vite dev server.
+    cors_origins: str = "http://localhost:5173,http://127.0.0.1:5173"
+
     # Optional spaCy NER layer for name/location redaction (regex baseline always
     # runs). Off by default; when enabled the model must load or the first
     # redaction raises — never a silent fail-open. Requires the `ner` extra:

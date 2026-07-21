@@ -3,6 +3,7 @@
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 from eiye_db import __version__, db, pii
 from eiye_db.api import router
@@ -20,6 +21,12 @@ async def lifespan(_app: FastAPI):
 
 
 app = FastAPI(title=settings.app_name, version=__version__, lifespan=lifespan)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[o.strip() for o in settings.cors_origins.split(",") if o.strip()],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 app.include_router(router)
 
 
