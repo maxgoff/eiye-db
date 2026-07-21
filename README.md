@@ -47,9 +47,14 @@ Organizations have data scattered across dozens of systems (databases, file stor
 cd backend
 python -m venv .venv
 source .venv/bin/activate
-pip install -r requirements.txt
+pip install -e .          # installs the package + deps; -e so `python -m eiye_db.mcp_server` resolves from any working directory (the MCP host spawns it from an arbitrary cwd)
 uvicorn eiye_db.main:app --reload
 ```
+
+> Use `pip install -e .` rather than `pip install -r requirements.txt`: the
+> editable install puts the `eiye_db` package on the path so the MCP server
+> launches from any directory, and it reads dependencies from `pyproject.toml`
+> (the single source of truth).
 
 With no `EIYE_API_KEY` set, the API runs in open dev mode and the curls below
 work as written. To secure it, `export EIYE_API_KEY=<key>` (and optionally
@@ -75,6 +80,18 @@ curl -s -X POST localhost:8000/api/v1/query \
 The query response comes back with emails and phone numbers already redacted
 (`[REDACTED:email]`, `[REDACTED:phone]`) and the access recorded in
 `GET /api/v1/audit`.
+
+The filesystem connector reads **CSV, text, PDF, and XLSX** — query a document
+the same way (`{"path": "receipt.pdf"}` or `{"path": "report.xlsx"}`); the
+extracted text/rows flow through the identical redaction + audit path. Baseline
+redaction is regex (email, phone, SSN, credit card, IPv4). To also redact
+**names and locations**, enable the optional spaCy NER layer:
+
+```bash
+pip install -e ".[ner]"
+python -m spacy download en_core_web_sm
+export EIYE_PII_NER_ENABLED=true          # off by default; when on, the model must load (fails loud, never silently fail-open)
+```
 
 ### 3. Connect an agent via MCP
 
@@ -111,7 +128,7 @@ MCP server config and export the same for uvicorn.
 | Connector | Type | Status |
 |-----------|------|--------|
 | PostgreSQL | SQL DB | ✅ Available (read-only transactions) |
-| File System / CSV | Files | ✅ Available (root-scoped, schema inference) |
+| File System | Files (CSV, text, PDF, XLSX) | ✅ Available (root-scoped, schema inference, PII-redacted) |
 | REST API | HTTP API | ✅ Available (GET-only, OpenAPI discovery) |
 | MySQL | SQL DB | Planned |
 | MongoDB | NoSQL | Planned |
