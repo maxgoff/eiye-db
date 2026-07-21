@@ -2,7 +2,7 @@
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from eiye_db import audit, registry, service
+from eiye_db import audit, metrics, registry, service
 from eiye_db.connectors import ConnectorError
 from eiye_db.models import DataSource, DataSourceCreate, DataSourceUpdate, SourceQueryRequest, SourceQueryResponse
 from eiye_db.security import Identity, require_api_key
@@ -118,3 +118,10 @@ def audit_log(limit: int = 100, identity: Identity = Depends(require_api_key)):
     if not identity.is_admin:
         raise HTTPException(403, "audit log requires the admin API key")
     return audit.recent(min(limit, 1000))
+
+
+@router.get("/metrics")
+def metrics_summary(identity: Identity = Depends(require_api_key)):
+    if not identity.is_admin:
+        raise HTTPException(403, "metrics requires the admin API key")
+    return metrics.collect()

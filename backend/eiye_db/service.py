@@ -112,6 +112,7 @@ async def run_query(
             "request": safe_request,
             "rows": len(rows),
             "pii_redactions": sum(pii_counts.values()),
+            "pii_counts": pii_counts,
             "include_pii": include_pii,
         },
     )
