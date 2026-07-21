@@ -1,0 +1,6 @@
+id,name,email,phone,city,plan
+1,Alice Johnson,alice.johnson@acmecorp.com,617-555-0134,Boston,pro
+2,Bob Martinez,bob.m@globex.io,415-555-0188,San Francisco,starter
+3,Carla Nguyen,carla@initech.dev,212-555-0177,New York,business
+4,Derek Osei,derek.osei@umbrella.org,312-555-0142,Chicago,pro
+5,Elena Petrova,elena.p@hooli.xyz,206-555-0169,Seattle,free

@@ -1,0 +1,7 @@
+order_id,customer_id,amount,status,ordered_at
+1001,1,249.00,shipped,2026-06-02
+1002,3,1999.00,processing,2026-06-15
+1003,2,99.00,shipped,2026-06-20
+1004,1,499.00,delivered,2026-07-01
+1005,5,0.00,trial,2026-07-10
+1006,4,249.00,shipped,2026-07-12

@@ -1,0 +1,190 @@
+"""Core data models for eiye_db."""
+
+from datetime import datetime, timezone
+from enum import StrEnum
+from typing import Any, Literal
+
+from pydantic import BaseModel, Field
+
+
+def _utcnow() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+class DataSourceType(StrEnum):
+    POSTGRESQL = "postgresql"
+    MYSQL = "mysql"
+    MONGODB = "mongodb"
+    SQLITE = "sqlite"
+    FILE_SYSTEM = "filesystem"
+    GOOGLE_DRIVE = "google_drive"
+    REST_API = "rest_api"
+    EMAIL_IMAP = "email_imap"
+    EMAIL_EXCHANGE = "email_exchange"
+    GITHUB = "github"
+    GITLAB = "gitlab"
+    ELASTICSEARCH = "elasticsearch"
+    WEAVIATE = "weaviate"
+    PINECONE = "pinecone"
+    CSV = "csv"
+    PDF = "pdf"
+    WORD = "word"
+    CRM_SALESFORCE = "crm_salesforce"
+    CRM_HUBSPOT = "crm_hubspot"
+    ERP_SAP = "erp_sap"
+    ERP_NETSUITE = "erp_netsuite"
+    MCP_SERVER = "mcp_server"
+    WEB_SEARCH = "web_search"
+    LOGS = "logs"
+
+
+class ConnectionStatus(StrEnum):
+    DISCOVERED = "discovered"
+    CONNECTING = "connecting"
+    CONNECTED = "connected"
+    ERROR = "error"
+    DISCONNECTED = "disconnected"
+
+
+class DataSource(BaseModel):
+    """A registered data source in the semantic surface."""
+
+    id: str | None = Field(None, description="Unique identifier")
+    name: str
+    type: DataSourceType
+    status: ConnectionStatus = ConnectionStatus.DISCOVERED
+    config: dict[str, Any] = Field(default_factory=dict)
+    pii_risk_level: Literal["low", "medium", "high", "unknown"] = "unknown"
+    tags: list[str] = Field(default_factory=list)
+    description: str = ""
+    created_at: datetime = Field(default_factory=_utcnow)
+    updated_at: datetime = Field(default_factory=_utcnow)
+    last_connected: datetime | None = None
+    meta: dict[str, Any] = Field(default_factory=dict)
+
+
+class SchemaField(BaseModel):
+    """A field within a datasource schema."""
+
+    name: str
+    type: str
+    pii_detected: bool = False
+    pii_types: list[str] = Field(default_factory=list)
+    sample_value: str | None = None
+    description: str = ""
+    is_primary_key: bool = False
+    is_foreign_key: bool = False
+
+
+class SchemaInfo(BaseModel):
+    """Schema information discovered for a datasource."""
+
+    datasource_id: str
+    tables: list[dict[str, Any]] = Field(default_factory=list)
+    fields: list[SchemaField] = Field(default_factory=list)
+    relationships: list[dict[str, str]] = Field(default_factory=list)
+    discovered_at: datetime = Field(default_factory=_utcnow)
+
+
+class PIIResult(BaseModel):
+    """PII detection result."""
+
+    text: str
+    entities: list[dict[str, Any]] = Field(default_factory=list)
+    anonymized_text: str | None = None
+    risk_score: float = 0.0
+    detected_at: datetime = Field(default_factory=_utcnow)
+
+
+class AccessPolicy(BaseModel):
+    """Access control policy (ABAC)."""
+
+    id: str | None = None
+    name: str
+    description: str = ""
+    resource_type: str
+    resource_id: str
+    actions: list[Literal["read", "write", "delete", "admin"]] = Field(default_factory=list)
+    attributes: dict[str, Any] = Field(default_factory=dict)
+    conditions: dict[str, Any] = Field(default_factory=dict)
+    created_at: datetime = Field(default_factory=_utcnow)
+
+
+class AuditLog(BaseModel):
+    """Audit trail entry."""
+
+    id: str | None = None
+    timestamp: datetime = Field(default_factory=_utcnow)
+    action: str
+    resource_type: str
+    resource_id: str
+    user_id: str | None = None
+    api_key_id: str | None = None
+    datasource_id: str | None = None
+    details: dict[str, Any] = Field(default_factory=dict)
+    ip_address: str | None = None
+    success: bool = True
+
+
+class DataSourceCreate(BaseModel):
+    """Request body for registering a datasource."""
+
+    name: str
+    type: DataSourceType
+    config: dict[str, Any] = Field(default_factory=dict)
+    description: str = ""
+    tags: list[str] = Field(default_factory=list)
+
+
+class DataSourceUpdate(BaseModel):
+    """Request body for updating a datasource; None fields are left unchanged."""
+
+    name: str | None = None
+    config: dict[str, Any] | None = None
+    description: str | None = None
+    tags: list[str] | None = None
+
+
+class SourceQueryRequest(BaseModel):
+    """A source-scoped query. `request` is connector-specific:
+    postgres: {"sql": "SELECT ..."} · filesystem: {"path": "rel/file.csv"} ·
+    rest_api: {"path": "/endpoint", "params": {...}}."""
+
+    datasource_id: str
+    request: dict[str, Any]
+    limit: int = Field(100, ge=1, le=1000)
+    include_pii: bool = False
+
+
+class SourceQueryResponse(BaseModel):
+    """Result of a source-scoped query."""
+
+    datasource_id: str
+    rows: list[dict[str, Any]]
+    row_count: int
+    pii_filtered: bool
+    pii_counts: dict[str, int] = Field(default_factory=dict)
+    execution_time_ms: float = 0.0
+
+
+class QueryRequest(BaseModel):
+    """Query request to the semantic surface."""
+
+    query: str
+    datasource_ids: list[str] | None = None
+    response_format: Literal["structured", "natural_language", "raw"] = "structured"
+    include_pii: bool = False
+    cache_enabled: bool = True
+    timeout_seconds: int = 30
+
+
+class QueryResponse(BaseModel):
+    """Query response from the semantic surface."""
+
+    query: str
+    results: list[dict[str, Any]] = Field(default_factory=list)
+    datasource_ids_used: list[str] = Field(default_factory=list)
+    cache_hit: bool = False
+    pii_filtered: bool = False
+    execution_time_ms: float = 0.0
+    meta: dict[str, Any] = Field(default_factory=dict)
