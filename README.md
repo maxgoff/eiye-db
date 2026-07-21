@@ -41,6 +41,18 @@ Organizations have data scattered across dozens of systems (databases, file stor
 
 ## Quick Start (5 minutes)
 
+**Fastest path — one command against your own data:**
+
+```bash
+scripts/quickstart.sh --name mydata --type filesystem --root /path/to/a/folder
+#   or:  --type postgresql --dsn postgresql://user:pass@host/db
+#   or:  --type rest_api    --url https://api.example.com
+```
+
+It sets up the venv, registers the source, discovers its schema, runs one governed
+(PII-redacted, audited) query, and prints the command to connect an agent over MCP.
+The manual steps below do the same thing by hand if you'd rather drive the API.
+
 ### 1. Run the API
 
 ```bash
