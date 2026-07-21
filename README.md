@@ -1,0 +1,148 @@
+# eiye_db — Semantic Surface for AI-Ready Organizations
+
+## Overview
+
+eiye_db provides a **semantic surface** that helps organizations safely expose their data to AI agents. It solves the core problem: **data discovery → safe agent connection → governance & standard format**.
+
+Organizations have data scattered across dozens of systems (databases, file stores, APIs, email, CRM, etc.). Agents need access to all of it without gaps (which cause hallucination) and without exposing PII or sensitive data. eiye_db bridges that gap.
+
+## Core Value Proposition
+
+- **Unified datasource registry** — discover what data exists across your org
+- **Safe agent connection** — PII detection/detraction, access control, audit trails
+- **Standard format layer** — map heterogeneous sources to a common semantic model
+- **MCP server exposure** — agents query via standard MCP protocol
+- **Natural language interface** — orchestration agent manages all datasources
+
+## Architecture Layers
+
+```
++-------------------------------------------------------+
+|                    UI Layer                            |
+|  React Dashboard (config, monitoring, deployment)      |
++--------------------------------------------------------+
+|              Interface Layer                           |
+|  REST API  |  MCP Servers  |  Natural Language          |
++--------------------------------------------------------+
+|            Orchestration Layer                         |
+|  Strands-Agents + OpenPlanter Engine                   |
+|  Multi-turn context persistence across datasources     |
++--------------------------------------------------------+
+|           Semantic Surface Layer                       |
+|  Datasource Registry  |  Schema Discovery              |
+|  PII Detection        |  Access Control (ABAC/RBAC)    |
+|  Cache Proxy          |  Format Mapping                |
++--------------------------------------------------------+
+|           Datasource Connectors                        |
+|  SQL | NoSQL | CSV | PDF | Word | Email | CRM         |
+|  | ERP | Repos | Logs | MCP | Web Search | Cloud       |
++--------------------------------------------------------+
+```
+
+## Quick Start (5 minutes)
+
+### 1. Run the API
+
+```bash
+cd backend
+python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+uvicorn eiye_db.main:app --reload
+```
+
+With no `EIYE_API_KEY` set, the API runs in open dev mode and the curls below
+work as written. To secure it, `export EIYE_API_KEY=<key>` (and optionally
+`EIYE_ADMIN_API_KEY` — only the admin key may request unredacted PII or read
+the audit log); then add `-H "X-API-Key: $EIYE_API_KEY"` to every request below.
+
+### 2. Register the demo datasource and query it
+
+```bash
+# Register the bundled demo CSVs as a filesystem datasource
+curl -s -X POST localhost:8000/api/v1/datasources \
+  -H 'Content-Type: application/json' \
+  -d '{"name": "demo", "type": "filesystem", "config": {"root": "'$PWD'/../examples/demo_data"}}'
+
+# Grab the id from the response, then:
+curl -s -X POST localhost:8000/api/v1/datasources/<id>/test      # connection check
+curl -s -X POST localhost:8000/api/v1/datasources/<id>/discover  # schema discovery
+curl -s -X POST localhost:8000/api/v1/query \
+  -H 'Content-Type: application/json' \
+  -d '{"datasource_id": "<id>", "request": {"path": "customers.csv"}}'
+```
+
+The query response comes back with emails and phone numbers already redacted
+(`[REDACTED:email]`, `[REDACTED:phone]`) and the access recorded in
+`GET /api/v1/audit`.
+
+### 3. Connect an agent via MCP
+
+```bash
+# Claude Code
+claude mcp add eiye-db -- /path/to/backend/.venv/bin/python -m eiye_db.mcp_server
+```
+
+Or in Claude Desktop's `claude_desktop_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "eiye-db": {
+      "command": "/path/to/backend/.venv/bin/python",
+      "args": ["-m", "eiye_db.mcp_server"]
+    }
+  }
+}
+```
+
+The agent gets three tools — `list_datasources`, `get_schema`,
+`query_datasource` — all read-only, PII-redacted, and audited.
+
+**Note:** the API and the MCP server share the registry via
+`EIYE_DATABASE_URL` (default `sqlite:///./eiye.db`, relative to the working
+directory). Since MCP hosts spawn the server from an arbitrary cwd, set an
+absolute path for both processes, e.g. add
+`"env": {"EIYE_DATABASE_URL": "sqlite:////absolute/path/to/eiye.db"}` to the
+MCP server config and export the same for uvicorn.
+
+## Datasource Connectors
+
+| Connector | Type | Status |
+|-----------|------|--------|
+| PostgreSQL | SQL DB | ✅ Available (read-only transactions) |
+| File System / CSV | Files | ✅ Available (root-scoped, schema inference) |
+| REST API | HTTP API | ✅ Available (GET-only, OpenAPI discovery) |
+| MySQL | SQL DB | Planned |
+| MongoDB | NoSQL | Planned |
+| Google Drive | Cloud Storage | Planned |
+| Email (IMAP) | Email | Planned |
+| GitHub/GitLab | Repositories | Planned |
+
+## Pricing Tiers
+
+| Tier | Datasources | Queries/mo | Price |
+|------|-------------|------------|-------|
+| Free | Up to 5 | 1,000 | $0 |
+| Starter | Up to 15 | 25,000 | $99/mo |
+| Pro | Up to 50 | 250,000 | $499/mo |
+| Business | Up to 150 | 1M | $1,999/mo |
+| Enterprise | Unlimited | Custom | Contact sales |
+
+See GOALS.md for the full open-core breakdown.
+
+## Competitive Landscape
+
+| Competitor | Focus | Gap vs eiye_db |
+|-----------|-------|----------------|
+| Databricks Unity Catalog | Data governance at scale | No agent-native interface |
+| Collibra | Enterprise data catalog | Heavy, no semantic surface |
+| Airbyte | Data integration | No PII/governance built-in |
+| LangChain/LlamaIndex | Agent frameworks | No datasource management |
+| MCP (Anthropic) | Protocol standard | No orchestration layer |
+| Weaviate/Pinecone | Vector DBs | Storage only, no discovery |
+| **eiye_db** | **Semantic surface for agents** | **Full stack: discovery + governance + access** |
+
+## License
+
+Open-core: Apache-2.0 for OSS components (core surface, connectors, PII engine, ABAC, orchestration agent, UI); commercial license for enterprise features (advanced analytics, SSO, compliance reports, multi-tenant orchestration). See GOALS.md.
