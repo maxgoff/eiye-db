@@ -4,7 +4,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
-from eiye_db import __version__, db
+from eiye_db import __version__, db, pii
 from eiye_db.api import router
 from eiye_db.config import settings
 
@@ -12,6 +12,10 @@ from eiye_db.config import settings
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     db.configure()
+    if settings.pii_ner_enabled:
+        # Fail loud at boot if the NER model is missing, rather than 500-ing (or
+        # worse, silently under-redacting) on the first query.
+        pii._load_ner()
     yield
 
 

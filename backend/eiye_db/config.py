@@ -19,5 +19,13 @@ class Settings(BaseSettings):
     api_key: str | None = None
     admin_api_key: str | None = None
 
+    # Optional spaCy NER layer for name/location redaction (regex baseline always
+    # runs). Off by default; when enabled the model must load or the first
+    # redaction raises — never a silent fail-open. Requires the `ner` extra:
+    #   pip install -e ".[ner]" && python -m spacy download en_core_web_sm
+    pii_ner_enabled: bool = False
+    pii_ner_model: str = "en_core_web_sm"
+    pii_ner_max_chars: int = 100_000  # cap text scanned per string (NER cost is length-bound)
+
 
 settings = Settings()

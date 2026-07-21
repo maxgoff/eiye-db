@@ -90,7 +90,14 @@ async def run_query(
     rows = jsonable_encoder(rows)
     pii_counts: dict[str, int] = {}
     if not include_pii:
-        rows, pii_counts = pii.redact_structure(rows)
+        # NER redaction is CPU-heavy; run it off the event loop so it can't stall
+        # other requests. The regex-only path is cheap enough to stay inline.
+        from eiye_db.config import settings
+
+        if settings.pii_ner_enabled:
+            rows, pii_counts = await asyncio.to_thread(pii.redact_structure, rows)
+        else:
+            rows, pii_counts = pii.redact_structure(rows)
 
     # Build the response before auditing success so a serialization failure
     # is recorded as a failure, not a phantom success.

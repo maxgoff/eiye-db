@@ -12,7 +12,8 @@ from typing import Any
 
 from mcp.server.fastmcp import FastMCP
 
-from eiye_db import db, registry, service
+from eiye_db import db, pii, registry, service
+from eiye_db.config import settings
 
 MCP_KEY_ID = "mcp-stdio"
 
@@ -63,6 +64,8 @@ async def query_datasource(
 
 def main() -> None:
     db.configure()
+    if settings.pii_ner_enabled:
+        pii._load_ner()  # fail loud at boot if the NER model is missing
     mcp.run()
 
 
